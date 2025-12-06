@@ -7,24 +7,34 @@ const qrcode = require("qrcode-terminal");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const { log } = require("console");
 
 const app = express();
 app.use(express.json());
 
-// 🔐 CORS: لو حابب تحصره على الدومين تبعك فقط
+// 🔐 CORS: السماح فقط لدومينات معيّنة
 app.use(
   cors({
     origin: [
       "https://www.robonarim.com",
       "https://robonarim.com",
+      "http://localhost:3000", // ✅ بدون السلاش
       // لو عندك دومينات أخرى زيدها هون
     ],
   })
 );
 
-const BOT_SECRET = process.env.BOT_SECRET;
+// ✅ قراءة BOT_SECRET مع trim لإزالة أي فراغات غير مقصودة
+const BOT_SECRET = (process.env.BOT_SECRET || "").trim();
+
+// ⚠️ لوج خفيف للمساعدة في الديبغ (بدون كشف السر كامل)
+console.log("BOT SECRET INIT", {
+  hasSecret: !!BOT_SECRET,
+  length: BOT_SECRET.length,
+});
 
 // =============== WhatsApp Client ===============
+
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
@@ -91,22 +101,30 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Middleware للتأكد من السر
+// =============== Middleware للتأكد من السر ===============
+
 app.use((req, res, next) => {
   if (req.path === "/health") return next(); // health بدون حماية
 
-  const headerSecret = req.headers["x-bot-secret"];
+  const headerSecret = (req.headers["x-bot-secret"] || "").toString().trim();
+
   if (!BOT_SECRET || headerSecret !== BOT_SECRET) {
+    console.warn("BOT_SECRET:", BOT_SECRET, "headerSecret:", headerSecret);
     console.warn("Unauthorized request to bot", {
       path: req.path,
       ip: req.ip,
+      headerLen: headerSecret.length,
+      envLen: BOT_SECRET.length,
+      match: headerSecret === BOT_SECRET,
     });
     return res.status(401).json({ ok: false, error: "unauthorized" });
   }
+
   next();
 });
 
 // =============== API Endpoint ===============
+
 app.post("/send", async (req, res) => {
   let { phone, message, pdfUrl } = req.body;
 
@@ -183,6 +201,7 @@ app.post("/send", async (req, res) => {
 });
 
 // =============== Start Server ===============
+
 const PORT = process.env.PORT || 3001;
 const HOST = "0.0.0.0"; // مهم ليشتغل على كل الواجهات
 
